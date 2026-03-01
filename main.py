@@ -1,115 +1,121 @@
 # Made by Mister 💛
-
 import asyncio
+import sys
+from loguru import logger
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from loguru import logger
 
-from config import get_config, ConfigError
-from src.utils.logger import setup_logger
-from src.utils.database import Database
-from src.database.media_tables import MediaDatabase
-from src.services.session_manager import SessionManager
-from src.services.simulation_engine import SimulationEngine
-from src.handlers.admin_commands import router as admin_router, set_dependencies as set_admin_deps
-from src.handlers.callbacks import router as callback_router, set_dependencies as set_callback_deps
-from src.handlers.text_conversion import router as text_conv_router, set_db
-from src.handlers.media_setup import router as media_router, set_media_dependencies
+from config import get_config
+from data.repositories.session_repo import SessionRepository
+from data.repositories.config_repo import ConfigRepository
+from data.repositories.media_repo import MediaRepository
 
+from services.event_bus import EventBus
+from services.telegram.client_manager import TelegramService
+from services.telegram.message_sender import SenderService
+from services.coordinator.simulation_coordinator import SimulationCoordinator
+from services.coordinator.scheduler_service import BackgroundScheduler
+from services.health_monitor import HealthMonitor
+
+from bot.routers.base import router as base_router
+from bot.routers.sessions import router as sessions_router
+from bot.routers.settings import router as settings_router
+from bot.routers.simulation import router as simulation_router
+from bot.routers.status import router as status_router
+from bot.routers.scheduler import router as scheduler_router
+from bot.routers.media import router as media_router
+from bot.routers.automation import router as automation_router
+from bot.notification_handler import BotNotifier
+from bot.middlewares.auth import AuthMiddleware
+from services.coordinator.automation_worker import AutomationWorker
 
 async def main():
-    """Main function to start the bot"""
+    """The Skeleton: Connections and Nerves initialization."""
+    # 0. Set up Logging (The Diary)
+    import os
+    if not os.path.exists("logs"): os.makedirs("logs")
+    logger.add("logs/bot_{time}.log", rotation="10 MB", level="INFO")
+    
+    logger.info("Starting MisterGroup V2 (Living Organism Model)")
+    
+    # 1. Personality & Rules (Config)
     try:
         cfg = get_config()
-    except ConfigError as e:
-        print(f"\n❌ Configuration Error: {e}")
-        print("Please create a .env file with your configuration.")
-        print("See .env.example for template.\n")
+    except Exception as e:
+        logger.error(f"DNA Corruption: {e}")
         return
+
+    # 2. Vault and Memory (Data Layer)
+    session_repo = SessionRepository()
+    config_repo = ConfigRepository()
+    media_repo = MediaRepository()
     
-    setup_logger(cfg.log_level)
-    
-    logger.info("Starting Telegram Conversation Simulator Bot")
-    logger.info("Made by Mister 💛")
-    
+    # 3. Connection & Nervous System (Services Layer)
+    api_id = cfg.telethon.api_id
+    api_hash = cfg.telethon.api_hash
+    bot_token = cfg.bot.token
     admin_id = cfg.bot.admin_id
-    if admin_id is None:
-        logger.warning("ADMIN_ID not set in environment. Bot will accept first user as admin.")
-    else:
-        logger.info(f"Admin ID set to: {admin_id}")
     
-    if not cfg.telethon.is_configured:
-        logger.warning("API_ID or API_HASH not set. Telethon features will be limited.")
-        logger.warning("Get your API credentials from https://my.telegram.org")
+    event_bus = EventBus()
+    telegram_service = TelegramService(session_repo, api_id, api_hash)
+    if not telegram_service: return # Should not happen
+    message_sender = SenderService()
     
-    db = Database()
-    logger.info("Database initialized")
+    coordinator = SimulationCoordinator(telegram_service, message_sender, event_bus, media_repo)
+    automation_worker = AutomationWorker(coordinator, config_repo)
+    scheduler = BackgroundScheduler(coordinator, event_bus, config_repo, automation_worker)
+    health_monitor = HealthMonitor()
     
-    media_db = MediaDatabase()
-    logger.info("Media database initialized")
-    
-    if admin_id is None:
-        config_data = db.get_config()
-        stored_admin_id = config_data.get("admin_id")
-        if stored_admin_id is not None:
-            admin_id = stored_admin_id
-            logger.info(f"Loaded admin ID from database: {admin_id}")
-    else:
-        db.update_config({"admin_id": admin_id})
-        logger.info(f"Admin ID set from environment: {admin_id}")
-    
-    if cfg.telethon.is_configured:
-        session_manager = SessionManager(db, cfg.telethon.api_id, cfg.telethon.api_hash)
-        logger.info("Session manager initialized")
-    else:
-        session_manager = None
-        logger.warning("Session manager not initialized (missing API credentials)")
-    
-    simulation_engine = SimulationEngine(db, session_manager) if session_manager else None
-    if simulation_engine:
-        logger.info("Simulation engine initialized")
-        simulation_engine.set_media_sender(media_db)
-    
-    bot = Bot(
-        token=cfg.bot.token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
+    # 4. Interface (Bot Layer)
+    bot = Bot(token=bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     
-    if simulation_engine:
-        asyncio.create_task(simulation_engine.auto_resume_scheduler())
+    # Register Middleware
+    dp.message.middleware(AuthMiddleware())
+    dp.callback_query.middleware(AuthMiddleware())
     
-    set_admin_deps(db, session_manager, simulation_engine, admin_id)
-    set_callback_deps(db, session_manager, simulation_engine, admin_id)
-    set_db(db)
-    set_media_dependencies(db, media_db, session_manager, admin_id)
+    # Subscribing 'Voice Box' (Notifier)
+    notifier = BotNotifier(bot, event_bus, admin_id)
     
-    dp.include_router(admin_router)
-    dp.include_router(callback_router)
-    dp.include_router(text_conv_router)
+    # Include 'Mouth' (Routers)
+    dp.include_router(base_router)
+    dp.include_router(sessions_router)
+    dp.include_router(settings_router)
+    dp.include_router(simulation_router)
+    dp.include_router(status_router)
+    dp.include_router(scheduler_router)
     dp.include_router(media_router)
-    logger.info("Command handlers registered")
+    dp.include_router(automation_router)
     
-    logger.info("Bot starting... Press Ctrl+C to stop")
-    logger.info("="*50)
+    # Add repositories as dependencies for middleware (simplified here)
+    dp["config_repo"] = config_repo
+    dp["session_repo"] = session_repo
+    dp["media_repo"] = media_repo
+    dp["coordinator"] = coordinator
+    dp["scheduler"] = scheduler
+    dp["tg_service"] = telegram_service
+    dp["health_monitor"] = health_monitor
+    dp["automation_worker"] = automation_worker
+    dp["bot"] = bot
     
+    # 5. Birth & Execution
+    logger.info("Organism is Alive! Waiting for input...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        # Auto-start scheduler if configured
+        if config_repo.get_config().get("scheduler_running"):
+            await scheduler.start()
+            
         await dp.start_polling(bot)
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.critical(f"Organism died: {e}")
     finally:
-        if session_manager:
-            await session_manager.disconnect_all()
+        await telegram_service.disconnect_all()
         await bot.session.close()
-        logger.info("Bot stopped")
-
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.info("Organism hibernating (Stopped by User)")
