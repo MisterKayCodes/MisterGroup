@@ -26,6 +26,9 @@ class AuthMiddleware(BaseMiddleware):
         if isinstance(event, Message) and event.text == "/start":
             return await handler(event, data)
 
+        # --- MOVE THIS UP HERE ---
+        state = data.get("state") 
+
         # Get repository
         config_repo: ConfigRepository = data.get("config_repo")
         if not config_repo:
@@ -33,14 +36,13 @@ class AuthMiddleware(BaseMiddleware):
 
         # Check authentication (The 'Key' in the Vault)
         if config_repo.is_user_authenticated(user.id):
-            if state:
+            if state: # Now 'state' is defined and won't crash!
                 curr = await state.get_state()
-                if curr: # If they somehow got stuck in a state, clear it
+                if curr: 
                     await state.clear()
             return await handler(event, data)
 
         # Allow PIN entry state (The 'Checking Room')
-        state = data.get("state")
         if state:
             current_state = await state.get_state()
             if current_state == AuthStates.WAITING_FOR_PIN:
