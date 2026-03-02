@@ -148,7 +148,12 @@ class SimulationCoordinator:
                 tags = MediaParser.extract_tags(message.content)
                 if tags:
                     tag = tags[0]
-                    cat = self.media_repo.get_category_by_tag(tag)
+                    # ALIASING: Map specific tags to available user categories
+                    search_tag = tag
+                    if tag in ["PROFIT", "WITHDRAWAL", "DEPOSIT"]:
+                        search_tag = "WITHDRAW"
+                        
+                    cat = self.media_repo.get_category_by_tag(search_tag)
                     if cat:
                         ranges = cat["index_ranges"]
                         indices = []
@@ -167,6 +172,10 @@ class SimulationCoordinator:
                             message.media_type = MessageType(item["media_type"])
                             message.content = MediaParser.remove_tags(message.content)
                             self.media_repo.update_pointer(cat["id"], ptr + 1)
+                        else:
+                            logger.warning(f"Media item at index {target_idx} not found for tag {tag} (aliased to {search_tag})")
+                    else:
+                        logger.warning(f"No media category found for tag {tag} (aliased to {search_tag})")
             except Exception as e:
                 logger.error(f"Media Tag Resolution Error: {e}")
 

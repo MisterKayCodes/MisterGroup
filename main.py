@@ -34,8 +34,25 @@ async def main():
     """The Skeleton: Connections and Nerves initialization."""
     # 0. Set up Logging (The Diary)
     import os
+    import logging
     if not os.path.exists("logs"): os.makedirs("logs")
-    logger.add("logs/bot_{time}.log", rotation="10 MB", level="INFO")
+    
+    # Intercept standard logging to loguru
+    class InterceptHandler(logging.Handler):
+        def emit(self, record):
+            try:
+                level = logger.level(record.levelname).name
+            except ValueError:
+                level = record.levelno
+            frame, depth = logging.currentframe(), 2
+            while frame.f_code.co_filename == logging.__file__:
+                frame = frame.f_back
+                depth += 1
+            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    logging.getLogger("aiogram").setLevel(logging.DEBUG)
+    logger.add("logs/bot_{time}.log", rotation="10 MB", level="DEBUG")
     
     logger.info("Starting MisterGroup V2 (Living Organism Model)")
     

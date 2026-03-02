@@ -66,12 +66,12 @@ class AutomationWorker:
                 inter_text = "{" + inter_tag + "}"
                 inter_content = DynamicGenerator.resolve_placeholders(inter_text)
                 
-                base_delay += random.uniform(1.0, 3.0)
+                inter_delay = random.uniform(1.0, 3.0)
                 messages.append(Message(
                     sender_name=inter_sender,
                     content=inter_content,
                     message_type=MessageType.TEXT,
-                    delay_before=round(base_delay, 1)
+                    delay_before=round(inter_delay, 1)
                 ))
 
             # 2. Main Script Message
@@ -83,13 +83,11 @@ class AutomationWorker:
             if i % 8 == 0: step_delay += random.uniform(15, 30) # Reflection gap
             if i % 3 == 0: step_delay += random.uniform(5, 10)  # Topic shift gap
             
-            base_delay += step_delay
-            
             messages.append(Message(
                 sender_name=sender,
                 content=content,
-                message_type=MessageType.TEXT,
-                delay_before=round(base_delay, 1)
+                message_type=MessageType.TEXT, # Coordinator resolves tags to MEDIA later
+                delay_before=round(step_delay, 1)
             ))
             
         conv = ConversationData(name=f"AutoNews: {news['title'][:30]}", messages=messages)

@@ -6,12 +6,13 @@ from aiogram.types import Message, CallbackQuery
 from data.repositories.session_repo import SessionRepository
 from data.repositories.config_repo import ConfigRepository
 from services.coordinator.simulation_coordinator import SimulationCoordinator
+from services.coordinator.scheduler_service import BackgroundScheduler
 from services.health_monitor import HealthMonitor
 
 router = Router()
 
 @router.message(F.text == "📊 Status")
-async def cmd_status(message: Message, session_repo: SessionRepository, config_repo: ConfigRepository, coordinator: SimulationCoordinator, health_monitor: HealthMonitor):
+async def cmd_status(message: Message, session_repo: SessionRepository, config_repo: ConfigRepository, coordinator: SimulationCoordinator, health_monitor: HealthMonitor, scheduler: BackgroundScheduler):
     """The 'Mouth' status report. Gathers info from Brain, Nervous System, and Health Probe."""
     sessions = session_repo.get_all_sessions()
     conf = config_repo.get_config()
@@ -34,6 +35,14 @@ async def cmd_status(message: Message, session_repo: SessionRepository, config_r
         f"🎯 <b>Target Group:</b> <code>{target_group}</code>\n"
         f"⚡ <b>Typing Speed:</b> {speed}\n"
     )
+    
+    auto_status = scheduler.get_automation_status()
+    if auto_status["enabled"]:
+        mins = auto_status["minutes_left"]
+        msgs = auto_status["pending_messages"]
+        status_text += f"🚀 <b>AI Automation:</b> {mins}m until next batch ({msgs} msgs)\n"
+    else:
+        status_text += "🚀 <b>AI Automation:</b> ⚪ Disabled\n"
     
     if is_running:
         status_text += (

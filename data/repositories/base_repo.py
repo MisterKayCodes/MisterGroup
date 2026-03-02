@@ -19,7 +19,8 @@ class BaseRepository:
                     "typing_speed": "normal",
                     "target_group": None,
                     "admin_id": None,
-                    "scheduler_running": False
+                    "scheduler_running": False,
+                    "automation_interval_hours": 4
                 },
                 "conversation": None,
                 "simulation_state": {
@@ -48,10 +49,16 @@ class BaseRepository:
 
     def _write(self, data: Dict[str, Any]):
         try:
-            with open(self.db_path, 'w', encoding='utf-8') as f:
+            temp_path = self.db_path.with_suffix(".tmp")
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+            
+            import os
+            os.replace(temp_path, self.db_path)
         except Exception as e:
             logger.error(f"Error writing to vault: {e}")
+            if temp_path.exists():
+                temp_path.unlink()
 
     def get(self, key: str, default: Any = None) -> Any:
         data = self._read()

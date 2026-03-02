@@ -12,6 +12,7 @@ class AuthMiddleware(BaseMiddleware):
         event: Update,
         data: Dict[str, Any]
     ) -> Any:
+        print(f"DEBUG: Middleware received event: {event}")
         # Get user from message or callback
         user = None
         if isinstance(event, Message):
@@ -20,10 +21,15 @@ class AuthMiddleware(BaseMiddleware):
             user = event.from_user
 
         if not user:
+            print(f"DEBUG: Update without user: {event}")
             return await handler(event, data)
 
+        print(f"DEBUG: Update from user {user.id} ({user.username}): {event}")
+
         # Skip auth for /start (the entry point)
-        if isinstance(event, Message) and event.text == "/start":
+        if isinstance(event, Message) and event.text in ["/start", "/ping"]:
+            if isinstance(event, Message) and event.text == "/ping":
+                await event.answer("🏓 Pong! Bot is alive.")
             return await handler(event, data)
 
         # --- MOVE THIS UP HERE ---
@@ -35,7 +41,11 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Check authentication (The 'Key' in the Vault)
-        if config_repo.is_user_authenticated(user.id):
+        # print(f"DEBUG: Checking auth for user {user.id}")
+        is_auth = config_repo.is_user_authenticated(user.id)
+        # print(f"DEBUG: is_auth={is_auth}")
+        
+        if is_auth:
             if state: # Now 'state' is defined and won't crash!
                 curr = await state.get_state()
                 if curr: 

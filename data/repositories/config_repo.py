@@ -73,3 +73,17 @@ class ConfigRepository(BaseRepository):
     def set_last_automation_hour(self, hour: int):
         """Record the hour of a successful news automation run."""
         self.update_config({"last_automation_hour": hour})
+
+    def get_automation_interval(self) -> int:
+        """Get the automation interval in hours (default: 4)."""
+        conf = self.get_config()
+        return conf.get("automation_interval_hours", 4)
+
+    def get_last_automation_timestamp(self) -> float:
+        """Fetch the timestamp of the last successful news automation run."""
+        conf = self.get_config()
+        return conf.get("last_automation_timestamp", 0.0)
+
+    def set_last_automation_timestamp(self, ts: float):
+        """Record the timestamp of a successful news automation run."""
+        self.update_config({"last_automation_timestamp": ts})
