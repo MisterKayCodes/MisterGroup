@@ -76,6 +76,44 @@ class SimulationCoordinator:
             
         return results
 
+    async def _resolve_media_tags(self, message: Message):
+        """Brain: Resolve Media Tags [TAG] with Guard and clean content."""
+        try:
+            tags = MediaParser.extract_tags(message.content)
+            if not tags:
+                return
+
+            tag = tags[0]
+            # Clean tags from text immediately to satisfy "even if media doesn't exist"
+            message.content = MediaParser.remove_tags(message.content)
+
+            # Look for category matching the tag
+            cat = self.media_repo.get_category_by_tag(tag)
+            if cat:
+                ranges = cat["index_ranges"]
+                indices = []
+                for r in ranges: indices.extend(range(r[0], r[1] + 1))
+                
+                ptr = cat["current_pointer"]
+                if ptr >= len(indices): ptr = 0
+                
+                target_idx = indices[ptr]
+                media_items = cat["media_items"]
+                if target_idx < len(media_items):
+                    item = media_items[target_idx]
+                    item["source_channel_id"] = cat["source_channel_id"]
+                    message.media_file_id = item["file_id"]
+                    message.media_meta = item
+                    message.media_type = MessageType(item["media_type"])
+                    self.media_repo.update_pointer(cat["id"], ptr + 1)
+                    logger.info(f"Resolved tag [{tag}] to media item {target_idx}")
+                else:
+                    logger.warning(f"Media item at index {target_idx} not found for tag {tag}")
+            else:
+                logger.debug(f"No media category found for tag {tag}. Tag removed from text.")
+        except Exception as e:
+            logger.error(f"Media Tag Resolution Error: {e}")
+
     async def run_period_messages(
         self,
         period: ScheduledPeriod,
@@ -100,6 +138,9 @@ class SimulationCoordinator:
             while self.state.is_paused and not self.state.should_stop:
                 await asyncio.sleep(0.5)
             
+            # Resolve tags before sending
+            await self._resolve_media_tags(message)
+
             client = await self.tg.get_client(message.sender_name)
             if not client:
                 failed += 1
@@ -143,41 +184,8 @@ class SimulationCoordinator:
             
             message = messages[i]
             
-            # Brain: Resolve Media Tags [TAG] with Guard
-            try:
-                tags = MediaParser.extract_tags(message.content)
-                if tags:
-                    tag = tags[0]
-                    # ALIASING: Map specific tags to available user categories
-                    search_tag = tag
-                    if tag in ["PROFIT", "WITHDRAWAL", "DEPOSIT"]:
-                        search_tag = "WITHDRAW"
-                        
-                    cat = self.media_repo.get_category_by_tag(search_tag)
-                    if cat:
-                        ranges = cat["index_ranges"]
-                        indices = []
-                        for r in ranges: indices.extend(range(r[0], r[1] + 1))
-                        
-                        ptr = cat["current_pointer"]
-                        if ptr >= len(indices): ptr = 0
-                        
-                        target_idx = indices[ptr]
-                        media_items = cat["media_items"]
-                        if target_idx < len(media_items):
-                            item = media_items[target_idx]
-                            item["source_channel_id"] = cat["source_channel_id"]
-                            message.media_file_id = item["file_id"]
-                            message.media_meta = item
-                            message.media_type = MessageType(item["media_type"])
-                            message.content = MediaParser.remove_tags(message.content)
-                            self.media_repo.update_pointer(cat["id"], ptr + 1)
-                        else:
-                            logger.warning(f"Media item at index {target_idx} not found for tag {tag} (aliased to {search_tag})")
-                    else:
-                        logger.warning(f"No media category found for tag {tag} (aliased to {search_tag})")
-            except Exception as e:
-                logger.error(f"Media Tag Resolution Error: {e}")
+            # Resolve Media Tags [TAG]
+            await self._resolve_media_tags(message)
 
             # Hand: Client Retrieval and Send with individual Guard
             try:
